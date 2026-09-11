@@ -19,6 +19,7 @@ internal static class SelfTest
         void Check(bool condition, string name) { if (!condition) throw new InvalidOperationException(name); log.Add("PASS " + name); }
         try
         {
+            Check(typeof(object).Assembly.GetName().Name == "mscorlib", "运行于Windows自带的.NET Framework CLR");
             Check(TimeMath.TryParse("24:00", out int end) && end == 1440, "24:00结束边界");
             Check(!TimeMath.TryParse("24:01", out _) && !TimeMath.TryParse("-1:00", out _) && !TimeMath.TryParse("12:60", out _), "无效时间拒绝");
             Check(TimeMath.TryParse("09：35", out int value) && value == 575, "中文冒号输入");
@@ -49,7 +50,35 @@ internal static class SelfTest
             bool rejected = false;
             try { store.Load(); } catch { rejected = true; }
             Check(rejected && File.ReadAllText(store.FilePath) == "{ damaged", "损坏文件保留");
-            var window = new MainWindow(Path.Combine(work, "preview.json"), true) { Width = 1440, Height = 820 };
+            var compatibilityPath = Path.Combine(work, "existing-v2.json");
+            const string existingJson = """
+                {"Version":2,"GridMinutes":5,"CloseToTray":true,"RememberCloseChoice":true,
+                "CustomColors":["#AB12EF"],"ReminderReceipts":["saved-receipt"],"Days":{
+                "2026-09-10":[{"Id":"11111111-1111-1111-1111-111111111111","Title":"已有日程","Start":540,"End":630,"Color":"#AB12EF","ReminderEnabled":true,"ReminderMinutes":15}],
+                "2026-09-12":[{"Id":"22222222-2222-2222-2222-222222222222","Title":"已有事件","Start":960,"End":null,"Color":"#7564F4","ReminderEnabled":false,"ReminderMinutes":5}]}}
+                """;
+            File.WriteAllText(compatibilityPath, existingJson);
+            var compatibilityStore = new ScheduleStore(compatibilityPath);
+            var existing = compatibilityStore.Load();
+            var existingItem = existing.ForDate(new DateTime(2026, 9, 10)).Single();
+            Check(existingItem.Id == Guid.Parse("11111111-1111-1111-1111-111111111111") && existingItem.ReminderEnabled && existingItem.ReminderMinutes == 15,
+                "原有JSON保留标记ID和提前提醒");
+            existingItem.Title = "修改已有日程";
+            compatibilityStore.Save(existing);
+            var reloaded = compatibilityStore.Load();
+            Check(reloaded.Days.Count == 2 && reloaded.ForDate(new DateTime(2026, 9, 12)).Single().Title == "已有事件" && reloaded.CloseToTray && reloaded.RememberCloseChoice
+                && reloaded.CustomColors.Contains("#AB12EF") && reloaded.ReminderReceipts.Contains("saved-receipt"), "跨日期保存保留其他日期及全部设置");
+            Check(File.ReadAllText(compatibilityPath + ".bak") == existingJson, "原有日程备份完整保留");
+            var legacyPath = Path.Combine(work, "existing-v1.json");
+            const string legacyJson = """{"Version":1,"Items":[{"Id":"33333333-3333-3333-3333-333333333333","Title":"旧版日程","Start":600,"End":660}]}""";
+            File.WriteAllText(legacyPath, legacyJson);
+            var legacyStore = new ScheduleStore(legacyPath);
+            var legacyData = legacyStore.Load();
+            legacyStore.Save(legacyData);
+            Check(legacyStore.Load().Items.Single().Title == "旧版日程" && File.ReadAllText(legacyPath + ".v1.bak") == legacyJson, "旧版日程迁移及备份");
+            var previewPath = Path.Combine(work, "preview.json");
+            new ScheduleStore(previewPath).Save(new PlannerData { RememberCloseChoice = true });
+            var window = new MainWindow(previewPath, true) { Width = 1440, Height = 820 };
             window.Show(); window.UpdateLayout();
             var timeline = (TimelineControl)window.FindName("Timeline");
             timeline.Now = DateTime.Today.AddHours(10).AddMinutes(24);
@@ -104,7 +133,7 @@ internal static class SelfTest
             ((TextBox)editor.FindName("HexInput")).Text = "#AB12EF";
             editor.UpdateLayout();
             Snapshot(editor, Path.Combine(root, "custom-color-preview.png"));
-            Check(editor.ActualHeight > 400 && editor.ActualHeight < 800, "编辑窗口布局");
+            Check(editor.ActualHeight > 400 && editor.ActualHeight <= editor.MaxHeight + 1, "编辑窗口适应屏幕工作区");
             editor.Close();
             window.Close();
             log.Add($"通过：{log.Count}项检查");

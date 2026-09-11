@@ -52,11 +52,11 @@ public static class TimeMath
         minutes = hour * 60 + minute;
         return true;
     }
-    public static int Snap(double minute, int grid) => Math.Clamp((int)Math.Round(minute / grid, MidpointRounding.AwayFromZero) * grid, 0, 1440);
+    public static int Snap(double minute, int grid) => Numeric.Clamp((int)Math.Round(minute / grid, MidpointRounding.AwayFromZero) * grid, 0, 1440);
     public static (int Start, int? End) Move(ScheduleItem item, int delta)
     {
         var length = (item.End ?? item.Start) - item.Start;
-        var start = Math.Clamp(item.Start + delta, 0, item.IsPoint ? 1439 : 1440 - length);
+        var start = Numeric.Clamp(item.Start + delta, 0, item.IsPoint ? 1439 : 1440 - length);
         return (start, item.IsPoint ? null : start + length);
     }
     public static bool IsValid(ScheduleItem item) => !string.IsNullOrWhiteSpace(item.Title) && item.Title.Length <= 120 && item.Start >= 0 && item.Start < 1440 && (item.End is null || item.End > item.Start && item.End <= 1440);

@@ -1,5 +1,6 @@
 bin/
 obj/
+FodyWeavers.xsd
 .vs/
 release/
 artifacts/

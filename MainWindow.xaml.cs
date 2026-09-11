@@ -111,8 +111,8 @@ public partial class MainWindow : Window
         due.Sort((a, b) => a.Date.AddMinutes(a.Item.Start).CompareTo(b.Date.AddMinutes(b.Item.Start)));
         var lines = due.Take(3).Select(entry =>
         {
-            var title = entry.Item.Title.ReplaceLineEndings(" ");
-            if (title.Length > 40) title = title[..39] + "…";
+            var title = System.Text.RegularExpressions.Regex.Replace(entry.Item.Title, @"\r\n|[\r\n\f\u0085\u2028\u2029]", " ");
+            if (title.Length > 40) title = title.Substring(0, 39) + "…";
             return $"{entry.Date:M月d日} {TimeMath.Format(entry.Item.Start)}  {title}";
         });
         var message = string.Join("\n", lines);

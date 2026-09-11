@@ -46,8 +46,8 @@ public sealed class TimelineControl : FrameworkElement
     public void Refresh() { InvalidateMeasure(); InvalidateVisual(); }
     public void SetView(double start, double span)
     {
-        ViewSpan = Math.Clamp(span, 120, 1440);
-        ViewStart = Math.Clamp(start, 0, 1440 - ViewSpan);
+        ViewSpan = Numeric.Clamp(span, 120, 1440);
+        ViewStart = Numeric.Clamp(start, 0, 1440 - ViewSpan);
         Refresh();
         ViewChanged?.Invoke();
     }
@@ -75,7 +75,7 @@ public sealed class TimelineControl : FrameworkElement
         foreach (var (item, bar, at, barLane) in staged)
         {
             var cardWidth = Math.Min(152, Math.Max(140, width - 80));
-            var left = Math.Clamp(at - cardWidth / 2, 20, Math.Max(20, width - 20 - cardWidth));
+            var left = Numeric.Clamp(at - cardWidth / 2, 20, Math.Max(20, width - 20 - cardWidth));
             var row = 0;
             while (row < cards.Count && cards[row].Any(r => left < r.Right + 16 && left + cardWidth + 16 > r.Left)) row++;
             if (row == cards.Count) cards.Add([]);
@@ -95,7 +95,7 @@ public sealed class TimelineControl : FrameworkElement
         base.OnRender(dc);
         dc.DrawRectangle(Brushes.White, null, new Rect(RenderSize));
         BuildLayout(ActualWidth);
-        var pastX = ShowsToday ? Math.Clamp(X(Now.TimeOfDay.TotalMinutes), 36, ActualWidth - 36) : 36;
+        var pastX = ShowsToday ? Numeric.Clamp(X(Now.TimeOfDay.TotalMinutes), 36, ActualWidth - 36) : 36;
         dc.DrawRectangle(BrushOf("#FAFBFD"), null, new Rect(36, 64, Math.Max(0, pastX - 36), Math.Max(0, ActualHeight - 76)));
         int first = (int)Math.Ceiling(ViewStart / GridMinutes) * GridMinutes;
         var pixelsPerGrid = PlotWidth / ViewSpan * GridMinutes;
@@ -117,7 +117,7 @@ public sealed class TimelineControl : FrameworkElement
             var orange = BrushOf("#F17A45");
             dc.DrawLine(new Pen(orange, 1.3) { DashStyle = DashStyles.Dash }, new Point(nowX, 64), new Point(nowX, ActualHeight - 12));
             dc.DrawEllipse(orange, null, new Point(nowX, 64), 3.5, 3.5);
-            var labelLeft = Math.Clamp(nowX - 39, 2, Math.Max(2, ActualWidth - 82));
+            var labelLeft = Numeric.Clamp(nowX - 39, 2, Math.Max(2, ActualWidth - 82));
             dc.DrawRoundedRectangle(orange, null, new Rect(labelLeft, 1, 80, 20), 4, 4);
             Text(dc, $"现在 {Now:HH:mm}", labelLeft + 9, 3, 10, Brushes.White);
         }
@@ -132,7 +132,7 @@ public sealed class TimelineControl : FrameworkElement
                 var guide = BrushOf("#52738F");
                 dc.DrawLine(new Pen(guide, 1.3) { DashStyle = new DashStyle([4, 3], 0) },
                     new Point(hoverX, 64), new Point(hoverX, ActualHeight - 12));
-                var labelLeft = Math.Clamp(hoverX - 29, 3, Math.Max(3, ActualWidth - 61));
+                var labelLeft = Numeric.Clamp(hoverX - 29, 3, Math.Max(3, ActualWidth - 61));
                 dc.DrawRoundedRectangle(guide, null, new Rect(labelLeft, 40, 58, 23), 4, 4);
                 Text(dc, TimeMath.Format(hoverMinute), labelLeft + 10, 43, 12, Brushes.White);
             }
@@ -143,7 +143,7 @@ public sealed class TimelineControl : FrameworkElement
             var color = BrushOf(item.Color);
             var selected = item.Id == SelectedId;
             var card = entry.Card;
-            double endX = Math.Clamp(entry.Anchor, card.Left + 20, card.Right - 20);
+            double endX = Numeric.Clamp(entry.Anchor, card.Left + 20, card.Right - 20);
             var geometry = new StreamGeometry();
             using (var ctx = geometry.Open())
             {
@@ -175,7 +175,7 @@ public sealed class TimelineControl : FrameworkElement
             var teal = BrushOf("#008D94");
             dc.DrawRoundedRectangle(BrushOf("#26009DA4"), new Pen(teal, 1.5) { DashStyle = DashStyles.Dash }, new Rect(left, 83, Math.Max(2, right - left), 35), 5, 5);
             var label = $"{TimeMath.Format(Math.Min(anchor, current))}—{TimeMath.Format(Math.Max(anchor, current))} · {Math.Abs(current - anchor)}分钟";
-            var labelX = Math.Clamp(left, 8, Math.Max(8, ActualWidth - 240));
+            var labelX = Numeric.Clamp(left, 8, Math.Max(8, ActualWidth - 240));
             dc.DrawRoundedRectangle(Brushes.White, new Pen(teal, 1), new Rect(labelX, 123, 222, 28), 5, 5);
             Text(dc, label, labelX + 9, 129, 12, teal);
         }
@@ -252,8 +252,8 @@ public sealed class TimelineControl : FrameworkElement
                 var result = TimeMath.Move(dragItem, snapped - dragItem.Start);
                 preview.Start = result.Start; preview.End = result.End;
             }
-            else if (drag == DragMode.Start) preview.Start = Math.Clamp(current, 0, dragItem.End!.Value - Math.Min(GridMinutes, dragItem.End.Value - dragItem.Start));
-            else if (drag == DragMode.End) preview.End = Math.Clamp(current, dragItem.Start + Math.Min(GridMinutes, dragItem.End!.Value - dragItem.Start), 1440);
+            else if (drag == DragMode.Start) preview.Start = Numeric.Clamp(current, 0, dragItem.End!.Value - Math.Min(GridMinutes, dragItem.End.Value - dragItem.Start));
+            else if (drag == DragMode.End) preview.End = Numeric.Clamp(current, dragItem.Start + Math.Min(GridMinutes, dragItem.End!.Value - dragItem.Start), 1440);
         }
         Refresh();
     }
@@ -303,9 +303,9 @@ public sealed class TimelineControl : FrameworkElement
             {
                 var position = e.GetPosition(this);
                 hoverPosition = position;
-                var ratio = Math.Clamp((position.X - 36) / PlotWidth, 0, 1);
+                var ratio = Numeric.Clamp((position.X - 36) / PlotWidth, 0, 1);
                 var anchorMinute = ViewStart + ratio * ViewSpan;
-                var span = Math.Clamp(ViewSpan * Math.Pow(0.8, e.Delta / 120.0), 120, 1440);
+                var span = Numeric.Clamp(ViewSpan * Math.Pow(0.8, e.Delta / 120.0), 120, 1440);
                 SetView(anchorMinute - ratio * span, span);
             }
         }
@@ -352,7 +352,7 @@ public sealed class OverviewControl : FrameworkElement
         var now = X(t.Now.TimeOfDay.TotalMinutes);
         if (t.ShowsToday) dc.DrawLine(new Pen(TimelineControl.BrushOf("#F17A45"), 1.5), new Point(now, 15), new Point(now, 48));
         for (int minute = 0; minute <= 1440; minute += 360)
-            TimelineControl.Text(dc, TimeMath.Format(minute), Math.Clamp(X(minute) - 16, 0, Math.Max(0, ActualWidth - 34)), 51, 10, TimelineControl.BrushOf("#738297"));
+            TimelineControl.Text(dc, TimeMath.Format(minute), Numeric.Clamp(X(minute) - 16, 0, Math.Max(0, ActualWidth - 34)), 51, 10, TimelineControl.BrushOf("#738297"));
     }
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
@@ -367,8 +367,8 @@ public sealed class OverviewControl : FrameworkElement
         if (Timeline is not { } t || mode == 0) return;
         var delta = (e.GetPosition(this).X - origin) / W * 1440;
         if (mode == 1) t.SetView(start + delta, span);
-        else if (mode == 2) { var next = Math.Clamp(start + delta, 0, start + span - 120); t.SetView(next, start + span - next); }
-        else t.SetView(start, Math.Clamp(span + delta, 120, 1440 - start));
+        else if (mode == 2) { var next = Numeric.Clamp(start + delta, 0, start + span - 120); t.SetView(next, start + span - next); }
+        else t.SetView(start, Numeric.Clamp(span + delta, 120, 1440 - start));
     }
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e) { mode = 0; ReleaseMouseCapture(); e.Handled = true; }
     protected override void OnLostMouseCapture(MouseEventArgs e) { mode = 0; base.OnLostMouseCapture(e); }
