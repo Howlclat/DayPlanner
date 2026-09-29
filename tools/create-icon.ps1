@@ -1,6 +1,6 @@
-param(
-    [string]$Source = (Join-Path $PSScriptRoot '../Assets/app-icon-source.png'),
-    [string]$Output = (Join-Path $PSScriptRoot '../Assets/app.ico')
+﻿param(
+    [string]$Source = (Join-Path $PSScriptRoot '../src/DayPlanner.UI/Assets/app-icon-source.png'),
+    [string]$Output = (Join-Path $PSScriptRoot '../src/DayPlanner.UI/Assets/app.ico')
 )
 
 $ErrorActionPreference = 'Stop'

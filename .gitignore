@@ -11,3 +11,9 @@ demo-data.json*
 .env
 .env.*
 !.env.example
+
+*.apk
+*.aab
+*.keystore
+*.jks
+local.properties

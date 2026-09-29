@@ -1,3 +1,7 @@
 <Solution>
-  <Project Path="DayPlanner.csproj" />
+ <Project Path="src/DayPlanner.Core/DayPlanner.Core.csproj"/>
+ <Project Path="src/DayPlanner.UI/DayPlanner.UI.csproj"/>
+ <Project Path="src/DayPlanner.Desktop/DayPlanner.Desktop.csproj"/>
+ <Project Path="src/DayPlanner.Android/DayPlanner.Android.csproj"/>
+ <Project Path="src/DayPlanner.iOS/DayPlanner.iOS.csproj" Build="false"/>
 </Solution>
