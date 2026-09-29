@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -32,7 +32,7 @@ public sealed class TimelineControl : FrameworkElement
     private bool moved;
     private Point? hoverPosition;
     private readonly List<LayoutItem> layout = [];
-    private sealed record LayoutItem(ScheduleItem Item, Rect Bar, Rect Card, double Anchor, int Lane);
+    private sealed record LayoutItem(ScheduleItem Item, Rect Bar, double Anchor, Rect Card);
     private static readonly Brush Ink = BrushOf("#203047");
     private static readonly Brush Muted = BrushOf("#738297");
     private double PlotWidth => Math.Max(1, ActualWidth - 72);
@@ -59,32 +59,33 @@ public sealed class TimelineControl : FrameworkElement
         double Map(double t) => 36 + (t - ViewStart) / ViewSpan * plot;
         var visible = Items.Select(i => preview?.Id == i.Id ? preview : i)
             .Where(i => (i.End ?? i.Start) >= ViewStart && i.Start <= ViewStart + ViewSpan).OrderBy(i => i.Start).ThenBy(i => i.Id).ToList();
-        var bars = new List<double>();
-        var staged = new List<(ScheduleItem Item, Rect Bar, double Anchor, int Lane)>();
+        var occupied = new List<Rect>();
+        double bottom = 0;
         foreach (var item in visible)
         {
             double left = Math.Max(36, Map(item.Start)), right = Math.Min(width - 36, Map(item.End ?? item.Start));
-            var lane = bars.FindIndex(end => end + 14 < left);
-            if (lane < 0) { lane = bars.Count; bars.Add(0); }
-            bars[lane] = Math.Max(left + 12, right);
-            var bar = new Rect(item.IsPoint ? left - 7 : left, 92 + lane * 27, item.IsPoint ? 14 : Math.Max(6, right - left), 19);
-            staged.Add((item, bar, item.IsPoint ? left : (left + right) / 2, lane));
+            var cardWidth = Math.Min(152, plot);
+            var cardLeft = Numeric.Clamp(left - cardWidth / 2, 36, Math.Max(36, width - 36 - cardWidth));
+            var extentLeft = item.IsPoint ? Math.Min(cardLeft, left - 8) : left;
+            var extentRight = item.IsPoint ? Math.Max(cardLeft + cardWidth, left + 8) : left + Math.Max(6, right - left);
+            var top = 92.0;
+            Rect extent;
+            while (true)
+            {
+                extent = new Rect(extentLeft - 4, top - 4, extentRight - extentLeft + 8, item.IsPoint ? 134 : 72);
+                if (!occupied.Any(r => r.IntersectsWith(extent))) break;
+                top += 80;
+            }
+            occupied.Add(extent);
+            var bar = item.IsPoint ? new Rect(left - 8, 92, 16, 18)
+                : new Rect(left, top, Math.Max(6, right - left), 64);
+            var card = item.IsPoint ? new Rect(cardLeft, top + 48, cardWidth, 78) : Rect.Empty;
+            layout.Add(new(item, bar, left, card));
+            bottom = Math.Max(bottom, extent.Bottom);
         }
-        var cards = new List<List<Rect>>();
-        var cardTop = 151 + Math.Max(0, bars.Count - 1) * 27;
-        foreach (var (item, bar, at, barLane) in staged)
-        {
-            var cardWidth = Math.Min(152, Math.Max(140, width - 80));
-            var left = Numeric.Clamp(at - cardWidth / 2, 20, Math.Max(20, width - 20 - cardWidth));
-            var row = 0;
-            while (row < cards.Count && cards[row].Any(r => left < r.Right + 16 && left + cardWidth + 16 > r.Left)) row++;
-            if (row == cards.Count) cards.Add([]);
-            var rect = new Rect(left, cardTop + row * 108, cardWidth, 78);
-            cards[row].Add(rect);
-            layout.Add(new(item, bar, rect, at, barLane));
-        }
-        return Math.Max(400, cardTop + Math.Max(1, cards.Count) * 108 + 48);
+        return Math.Max(400, bottom + 48);
     }
+
     protected override Size MeasureOverride(Size availableSize)
     {
         var width = double.IsInfinity(availableSize.Width) ? 1200 : availableSize.Width;
@@ -142,42 +143,69 @@ public sealed class TimelineControl : FrameworkElement
             var item = entry.Item;
             var color = BrushOf(item.Color);
             var selected = item.Id == SelectedId;
-            var card = entry.Card;
-            double endX = Numeric.Clamp(entry.Anchor, card.Left + 20, card.Right - 20);
-            var geometry = new StreamGeometry();
-            using (var ctx = geometry.Open())
+            var block = entry.Bar;
+            var foreground = Brushes.White;
+            if (item.IsPoint)
             {
-                ctx.BeginFigure(new(entry.Anchor, entry.Bar.Bottom), false, false);
-                ctx.PolyLineTo([new(entry.Anchor, card.Top - 16), new(endX, card.Top - 7), new(endX, card.Top)], true, false);
-            }
-            dc.DrawGeometry(null, new Pen(color, 1.2), geometry);
-            if (item.IsPoint) dc.DrawEllipse(color, new Pen(Brushes.White, 2), new Point(entry.Anchor, entry.Bar.Top + 9), 8, 8);
-            else
-            {
-                dc.DrawRoundedRectangle(color, null, entry.Bar, 6, 6);
-                if (selected || IsMouseOver)
+                var card = entry.Card;
+                var connectionX = Numeric.Clamp(entry.Anchor, card.Left + 16, card.Right - 16);
+                var connection = new StreamGeometry();
+                using (var context = connection.Open())
                 {
-                    if (item.Start >= ViewStart) dc.DrawRoundedRectangle(Brushes.White, new Pen(color, 1), new Rect(entry.Bar.Left - 3, entry.Bar.Top + 2, 7, 15), 3, 3);
-                    if (item.End <= ViewStart + ViewSpan) dc.DrawRoundedRectangle(Brushes.White, new Pen(color, 1), new Rect(entry.Bar.Right - 4, entry.Bar.Top + 2, 7, 15), 3, 3);
+                    context.BeginFigure(new Point(entry.Anchor, block.Bottom), false, false);
+                    context.PolyLineTo(new[] { new Point(entry.Anchor, card.Top - 16),
+                        new Point(connectionX, card.Top - 7), new Point(connectionX, card.Top) }, true, false);
+                }
+                dc.DrawGeometry(null, new Pen(color, 1.2), connection);
+                dc.DrawEllipse(color, new Pen(Brushes.White, 2), new Point(entry.Anchor, block.Top + 9), 8, 8);
+                dc.DrawRoundedRectangle(BrushOf("#0A203047"), null,
+                    new Rect(card.X, card.Y + 3, card.Width, card.Height), 7, 7);
+                dc.DrawRoundedRectangle(Brushes.White,
+                    new Pen(selected ? color : BrushOf("#DFE6ED"), selected ? 1.5 : 1), card, 7, 7);
+                dc.DrawEllipse(color, null, new Point(connectionX, card.Top), 2.4, 2.4);
+                Text(dc, item.Title, card.X + 10, card.Y + 12, 14, Ink, true, card.Width - 40, 23);
+                Text(dc, item.TimeLabel, card.X + 10, card.Y + 46, 10.5, Muted,
+                    maxWidth: card.Width - 20, maxHeight: 26);
+                Text(dc, "⋯", card.Right - 27, card.Y + 6, 19, Muted);
+                continue;
+            }
+            dc.DrawRoundedRectangle(color, selected ? new Pen(Ink, 2) : null, block, 6, 6);
+            dc.PushClip(new RectangleGeometry(block, 6, 6));
+            var padding = block.Width < 60 ? 4 : 10;
+            var textLeft = block.Left + padding;
+            if (block.Width >= 22)
+            {
+                Text(dc, item.Title, textLeft, block.Top + 10, 13, foreground, true,
+                    block.Right - padding - textLeft, block.Width < 90 ? 44 : 22);
+                if (block.Width >= 90)
+                {
+                    var time = TimeMath.Format(item.Start) + "—" + TimeMath.Format(item.End!.Value);
+                    Text(dc, time, textLeft, block.Top + 38, 10.5, foreground,
+                        maxWidth: block.Right - padding - textLeft, maxHeight: 18);
                 }
             }
-            dc.DrawRoundedRectangle(BrushOf("#0A203047"), null, new Rect(card.X, card.Y + 3, card.Width, card.Height), 7, 7);
-            dc.DrawRoundedRectangle(Brushes.White, new Pen(selected ? color : BrushOf("#DFE6ED"), selected ? 1.5 : 1), card, 7, 7);
-            dc.DrawEllipse(color, null, new Point(endX, card.Top), 2.4, 2.4);
-            Text(dc, item.Title, card.X + 10, card.Y + 12, 14, Ink, true, card.Width - 40, 23);
-            Text(dc, item.TimeLabel, card.X + 10, card.Y + 46, 10.5, Muted, maxWidth: card.Width - 20, maxHeight: 26);
-            Text(dc, "⋯", card.Right - 27, card.Y + 6, 19, Muted);
+            dc.Pop();
+            var hovered = hoverPosition is Point p && block.Contains(p);
+            if (!item.IsPoint && (selected || hovered))
+            {
+                var handlePen = new Pen(foreground, 2);
+                if (item.Start >= ViewStart)
+                    dc.DrawLine(handlePen, new Point(block.Left + 2, block.Top + 25), new Point(block.Left + 2, block.Bottom - 25));
+                if (item.End <= ViewStart + ViewSpan)
+                    dc.DrawLine(handlePen, new Point(block.Right - 2, block.Top + 25), new Point(block.Right - 2, block.Bottom - 25));
+            }
         }
+
         if (drag == DragMode.Create && moved)
         {
             var left = X(Math.Min(anchor, current));
             var right = X(Math.Max(anchor, current));
             var teal = BrushOf("#008D94");
-            dc.DrawRoundedRectangle(BrushOf("#26009DA4"), new Pen(teal, 1.5) { DashStyle = DashStyles.Dash }, new Rect(left, 83, Math.Max(2, right - left), 35), 5, 5);
+            dc.DrawRoundedRectangle(BrushOf("#26009DA4"), new Pen(teal, 1.5) { DashStyle = DashStyles.Dash }, new Rect(left, Math.Max(83, origin.Y - 20), Math.Max(2, right - left), 64), 5, 5);
             var label = $"{TimeMath.Format(Math.Min(anchor, current))}—{TimeMath.Format(Math.Max(anchor, current))} · {Math.Abs(current - anchor)}分钟";
             var labelX = Numeric.Clamp(left, 8, Math.Max(8, ActualWidth - 240));
-            dc.DrawRoundedRectangle(Brushes.White, new Pen(teal, 1), new Rect(labelX, 123, 222, 28), 5, 5);
-            Text(dc, label, labelX + 9, 129, 12, teal);
+            dc.DrawRoundedRectangle(Brushes.White, new Pen(teal, 1), new Rect(labelX, Math.Max(83, origin.Y - 20) + 72, 222, 28), 5, 5);
+            Text(dc, label, labelX + 9, Math.Max(83, origin.Y - 20) + 78, 12, teal);
         }
         if (Items.Count == 0 && drag != DragMode.Create)
         {
@@ -193,7 +221,8 @@ public sealed class TimelineControl : FrameworkElement
         { MaxTextWidth = Math.Max(1, maxWidth), MaxTextHeight = maxHeight, Trimming = TextTrimming.CharacterEllipsis };
         dc.DrawText(ft, new Point(x, y));
     }
-    private LayoutItem? Hit(Point p) => layout.LastOrDefault(l => l.Card.Contains(p) || new Rect(l.Bar.X - 6, l.Bar.Y - 6, l.Bar.Width + 12, l.Bar.Height + 12).Contains(p));
+    private static double ResizeGrip(Rect block) => Math.Min(8, block.Width / 4);
+    private LayoutItem? Hit(Point p) => layout.LastOrDefault(l => l.Bar.Contains(p) || l.Card.Contains(p));
     protected override void OnMouseDown(MouseButtonEventArgs e)
     {
         base.OnMouseDown(e);
@@ -212,7 +241,8 @@ public sealed class TimelineControl : FrameworkElement
         if (e.ChangedButton != MouseButton.Left) return;
         SelectedId = hit?.Item.Id;
         if (hit != null && e.ClickCount == 2) { EditRequested?.Invoke(hit.Item); e.Handled = true; return; }
-        if (hit != null && hit.Card.Contains(origin) && origin.X > hit.Card.Right - 32 && origin.Y < hit.Card.Top + 36)
+        if (hit != null && hit.Item.IsPoint && hit.Card.Contains(origin)
+            && origin.X > hit.Card.Right - 32 && origin.Y < hit.Card.Top + 36)
         { ShowMenu(hit.Item); Refresh(); e.Handled = true; return; }
         moved = false;
         anchor = TimeMath.Snap(Minute(origin.X), GridMinutes);
@@ -221,10 +251,10 @@ public sealed class TimelineControl : FrameworkElement
         else
         {
             dragItem = hit.Item.Copy(); preview = dragItem.Copy(); drag = DragMode.Move;
-            if (!hit.Item.IsPoint && !hit.Card.Contains(origin))
+            if (!hit.Item.IsPoint)
             {
-                if (Math.Abs(origin.X - hit.Bar.Left) < 9 && hit.Item.Start >= ViewStart) drag = DragMode.Start;
-                else if (Math.Abs(origin.X - hit.Bar.Right) < 9 && hit.Item.End <= ViewStart + ViewSpan) drag = DragMode.End;
+                if (Math.Abs(origin.X - hit.Bar.Left) < ResizeGrip(hit.Bar) && hit.Item.Start >= ViewStart) drag = DragMode.Start;
+                else if (Math.Abs(origin.X - hit.Bar.Right) < ResizeGrip(hit.Bar) && hit.Item.End <= ViewStart + ViewSpan) drag = DragMode.End;
             }
         }
         CaptureMouse(); Refresh(); e.Handled = true;
@@ -238,7 +268,7 @@ public sealed class TimelineControl : FrameworkElement
         if (drag == DragMode.None)
         {
             var hit = Hit(p);
-            Cursor = hit is null ? Cursors.Cross : !hit.Item.IsPoint && !hit.Card.Contains(p) && (Math.Abs(p.X - hit.Bar.Left) < 9 || Math.Abs(p.X - hit.Bar.Right) < 9) ? Cursors.SizeWE : Cursors.Hand;
+            Cursor = hit is null ? Cursors.Cross : !hit.Item.IsPoint && ((Math.Abs(p.X - hit.Bar.Left) < ResizeGrip(hit.Bar) && hit.Item.Start >= ViewStart) || (Math.Abs(p.X - hit.Bar.Right) < ResizeGrip(hit.Bar) && hit.Item.End <= ViewStart + ViewSpan)) ? Cursors.SizeWE : Cursors.Hand;
             return;
         }
         if ((p - origin).Length > 4) moved = true;

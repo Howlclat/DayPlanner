@@ -23,6 +23,8 @@ public sealed class PlannerData
 {
     public int Version { get; set; } = 2;
     public int GridMinutes { get; set; } = 10;
+    public int DefaultViewStart { get; set; } = 360;
+    public int DefaultViewEnd { get; set; } = 1320;
     public bool CloseToTray { get; set; }
     public bool RememberCloseChoice { get; set; }
     public HashSet<string> ReminderReceipts { get; set; } = [];
@@ -88,6 +90,11 @@ public sealed class ScheduleStore(string path)
             throw new InvalidDataException("日期或标记内容异常，原文件已保留。");
         data.Version = 2;
         data.GridMinutes = data.GridMinutes == 5 ? 5 : 10;
+        if (data.DefaultViewStart < 0 || data.DefaultViewStart >= 1440 || data.DefaultViewEnd <= 0 || data.DefaultViewEnd > 1440 || data.DefaultViewEnd - data.DefaultViewStart < 120)
+        {
+            data.DefaultViewStart = 360;
+            data.DefaultViewEnd = 1320;
+        }
         foreach (var item in data.Days.Values.SelectMany(items => items))
         {
             item.Color = NormalizeColor(item.Color) ?? "#009DA4";

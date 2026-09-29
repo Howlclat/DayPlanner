@@ -114,7 +114,13 @@ internal static class SelfTest
             Check(timeline.Items.Count == 6 && integrationStore.Load().Items.Count == 6, "界面撤销并持久化");
             ((Button)window.FindName("RedoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(timeline.Items.Count == 7 && integrationStore.Load().Items.Count == 7, "界面重做并持久化");
-            ((Button)window.FindName("Grid5")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                var settings = window.OwnedWindows.OfType<SettingsWindow>().Single();
+                ((RadioButton)settings.FindName("Grid5Option")).IsChecked = true;
+                ((Button)settings.FindName("SaveButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            }));
+            ((Button)window.FindName("SettingsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Check(timeline.GridMinutes == 5 && integrationStore.Load().GridMinutes == 5, "网格切换并持久化");
             timeline.SetView(-100, 100);
             Check(timeline.ViewStart == 0 && timeline.ViewSpan == 120, "视区最小范围");

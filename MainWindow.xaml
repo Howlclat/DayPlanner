@@ -1,4 +1,4 @@
-<Window x:Class="DayPlanner.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:DayPlanner"
+﻿<Window x:Class="DayPlanner.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:DayPlanner"
         Title="时间规划局" Width="1320" Height="780" MinWidth="1120" MinHeight="620" WindowStartupLocation="CenterScreen" UseLayoutRounding="True" Style="{StaticResource {x:Type Window}}">
   <Grid Margin="22,18,22,12">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="90"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
@@ -20,22 +20,17 @@
           </Border>
         </Popup>
       </StackPanel>
-      <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-        <TextBlock Text="网格吸附" VerticalAlignment="Center" Foreground="#66758B" Margin="0,0,10,0"/>
-        <Button x:Name="Grid5" Content="5分钟" Click="Grid5_Click" Padding="12,9"/>
-        <Button x:Name="Grid10" Content="10分钟" Click="Grid10_Click" Padding="12,9" Margin="4,0,0,0"/>
-      </StackPanel>
-      <StackPanel Grid.Column="2" Margin="28,0,0,0" VerticalAlignment="Center">
+      <StackPanel Grid.Column="1" Margin="28,0,0,0" VerticalAlignment="Center">
         <TextBlock Text="当前时间" FontSize="11" Foreground="#7F8B9D"/>
         <TextBlock x:Name="ClockText" Text="00:00:00" FontSize="29" FontFamily="Cascadia Mono, Consolas" FontWeight="SemiBold"/>
       </StackPanel>
+      <Button x:Name="SettingsButton" Grid.Column="2" Content="设置" Click="Settings_Click" Margin="20,0,0,0" VerticalAlignment="Center" AutomationProperties.Name="设置"/>
     </Grid>
     <Border Grid.Row="1" CornerRadius="10" BorderBrush="#DEE6ED" BorderThickness="1" Background="White" ClipToBounds="True">
       <Grid>
         <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/></Grid.RowDefinitions>
         <DockPanel Margin="18,0">
           <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-            <CheckBox x:Name="CloseToTrayOption" Content="关闭时最小化到托盘" Checked="CloseToTrayChanged" Unchecked="CloseToTrayChanged" VerticalAlignment="Center" Margin="0,0,18,0" Foreground="#66758B" FontSize="12"/>
             <Button x:Name="UndoButton" Content="↶" Click="Undo_Click" ToolTip="撤销 Ctrl+Z" Padding="10,3" Margin="0,0,5,0"/>
             <Button x:Name="RedoButton" Content="↷" Click="Redo_Click" ToolTip="重做 Ctrl+Y" Padding="10,3" Margin="0,0,12,0"/>
             <Button x:Name="NewScheduleButton" Content="+ 新建" Click="New_Click" Background="{StaticResource Accent}" Foreground="White" BorderBrush="{StaticResource Accent}" Padding="12,5"/>
@@ -58,7 +53,7 @@
     </Grid>
     <DockPanel Grid.Row="3" Margin="4,8,4,0">
       <TextBlock x:Name="SaveStatus" DockPanel.Dock="Right" Text="已自动保存" Foreground="#50969A" FontSize="11" VerticalAlignment="Center"/>
-      <TextBlock Text="单击创建事件 · 拖动创建日程 · 双击卡片编辑 · Ctrl+滚轮缩放 · Shift+滚轮平移" Foreground="#8491A2" FontSize="11"/>
+      <TextBlock Text="单击创建事件 · 拖动创建日程 · 双击日程块编辑 · 右键更多操作 · Ctrl+滚轮缩放 · Shift+滚轮平移" Foreground="#8491A2" FontSize="11"/>
     </DockPanel>
   </Grid>
 </Window>

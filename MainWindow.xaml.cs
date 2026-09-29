@@ -29,7 +29,6 @@ public partial class MainWindow : Window
     private bool saveBlocked;
     private bool unsaved;
     private TrayIcon? tray;
-    private bool settingsReady;
     private bool exitRequested;
     private bool sessionEnding;
     private WindowState restoredState = WindowState.Normal;
@@ -58,9 +57,8 @@ public partial class MainWindow : Window
         Closed += (_, _) => { timer.Stop(); tray?.Dispose(); Application.Current.SessionEnding -= OnSessionEnding; };
         Application.Current.SessionEnding += OnSessionEnding;
         StateChanged += (_, _) => { if (WindowState != WindowState.Minimized) restoredState = WindowState; };
-        CloseToTrayOption.IsChecked = data.CloseToTray;
         Loaded += (_, _) => InitializeTray();
-        settingsReady = true;
+        Timeline.SetView(data.DefaultViewStart, data.DefaultViewEnd - data.DefaultViewStart);
         UpdateGrid(); Refresh();
         if (saveBlocked) { SaveStatus.Text = "文件读取异常 · 原文件已保留"; SaveStatus.Foreground = TimelineControl.BrushOf("#C24A40"); }
         else SaveStatus.Text = data.Days.Values.Any(items => items.Count > 0) ? "已自动保存" : "本地保存 · 随时开始";
@@ -129,7 +127,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            tray ??= new TrayIcon(data.CloseToTray, RestoreWindow, ExitApplication, value => CloseToTrayOption.IsChecked = value, OpenReminderDate);
+            tray ??= new TrayIcon(data.CloseToTray, RestoreWindow, ExitApplication, SetCloseToTray, OpenReminderDate);
             tray.EnsureVisible();
             return true;
         }
@@ -142,19 +140,18 @@ public partial class MainWindow : Window
     private void OpenReminderDate(DateTime date)
     {
         RestoreWindow();
-        if (!OwnedWindows.OfType<EventEditor>().Any()) SelectDate(date);
+        if (!OwnedWindows.Cast<Window>().Any(window => window.IsVisible)) SelectDate(date);
     }
     private void ExitApplication()
     {
-        if (OwnedWindows.OfType<EventEditor>().Any()) { RestoreWindow(); return; }
+        if (OwnedWindows.Cast<Window>().Any(window => window.IsVisible)) { RestoreWindow(); return; }
         exitRequested = true;
         Close();
         exitRequested = false;
     }
-    private void CloseToTrayChanged(object sender, RoutedEventArgs e)
+    private void SetCloseToTray(bool value)
     {
-        if (!settingsReady) return;
-        data.CloseToTray = CloseToTrayOption.IsChecked == true;
+        data.CloseToTray = value;
         data.RememberCloseChoice = true;
         tray?.SetCloseBehavior(data.CloseToTray);
         Save();
@@ -243,15 +240,21 @@ public partial class MainWindow : Window
     private void UpdateGrid()
     {
         Timeline.GridMinutes = data.GridMinutes;
-        foreach (var (button, value) in new[] { (Grid5, 5), (Grid10, 10) })
-        {
-            button.Background = value == data.GridMinutes ? TimelineControl.BrushOf("#008D94") : Brushes.White;
-            button.Foreground = value == data.GridMinutes ? Brushes.White : TimelineControl.BrushOf("#34465D");
-        }
         Timeline.Refresh();
     }
-    private void Grid5_Click(object sender, RoutedEventArgs e) { data.GridMinutes = 5; UpdateGrid(); Save(); }
-    private void Grid10_Click(object sender, RoutedEventArgs e) { data.GridMinutes = 10; UpdateGrid(); Save(); }
+    private void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        CalendarPopup.IsOpen = false;
+        var settings = new SettingsWindow(data) { Owner = this };
+        if (settings.ShowDialog() != true) return;
+        bool rangeChanged = settings.ViewStart != data.DefaultViewStart || settings.ViewEnd != data.DefaultViewEnd;
+        data.DefaultViewStart = settings.ViewStart;
+        data.DefaultViewEnd = settings.ViewEnd;
+        data.GridMinutes = settings.GridMinutes;
+        UpdateGrid();
+        if (rangeChanged) Timeline.SetView(data.DefaultViewStart, data.DefaultViewEnd - data.DefaultViewStart);
+        SetCloseToTray(settings.CloseToTray);
+    }
     private void New_Click(object sender, RoutedEventArgs e) => Create(Math.Min(1440 - data.GridMinutes, TimeMath.Snap(DateTime.Now.TimeOfDay.TotalMinutes, data.GridMinutes)), null);
     private void Undo_Click(object sender, RoutedEventArgs e) { if (History.CanUndo) { CurrentItems = History.Undo(CurrentItems); Refresh(); Save(); } }
     private void Redo_Click(object sender, RoutedEventArgs e) { if (History.CanRedo) { CurrentItems = History.Redo(CurrentItems); Refresh(); Save(); } }
@@ -276,9 +279,6 @@ public partial class MainWindow : Window
             {
                 data.CloseToTray = minimizeToTray;
                 data.RememberCloseChoice = true;
-                settingsReady = false;
-                CloseToTrayOption.IsChecked = minimizeToTray;
-                settingsReady = true;
                 tray?.SetCloseBehavior(minimizeToTray);
                 Save();
             }
