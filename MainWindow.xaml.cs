@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Globalization;
 using System.Windows.Controls;
 using System.Windows;
@@ -12,6 +12,8 @@ public partial class MainWindow : Window
 {
     private readonly ScheduleStore store;
     private readonly Dictionary<DateTime, PlannerHistory> histories = [];
+    private enum PlannerView { Day, Week, Month }
+    private PlannerView viewMode;
     private DateTime selectedDate = DateTime.Today;
     private DateTime lastToday = DateTime.Today;
     private bool syncingCalendar;
@@ -49,7 +51,17 @@ public partial class MainWindow : Window
         Timeline.EditRequested += item => Edit(item, false);
         Timeline.DeleteRequested += Delete;
         Timeline.TimeChanged += ChangeTime;
-        Timeline.ViewChanged += () => Overview.InvalidateVisual();
+        Timeline.ViewChanged += () => { Overview.InvalidateVisual(); WeekView.SetView(Timeline.ViewStart, Timeline.ViewSpan); };
+        WeekView.ViewChanged += (start, span) => Timeline.SetView(start, span);
+        WeekView.DateSelected += SelectDate;
+        WeekView.DayRequested += OpenDay;
+        WeekView.CreateRequested += (date, start, end) => { SelectDate(date); Create(start, end); };
+        WeekView.EditRequested += (date, item) => { SelectDate(date); Edit(item, false); };
+        WeekView.DeleteRequested += (date, item) => { SelectDate(date); Delete(item); };
+        WeekView.TimeChanged += (date, item, start, end) => { SelectDate(date); ChangeTime(item, start, end); };
+        MonthView.DateSelected += SelectDate;
+        MonthView.DayRequested += OpenDay;
+        MonthView.EditRequested += (date, item) => { SelectDate(date); Edit(item, false); };
         PreviewKeyDown += OnShortcut;
         timer.Tick += (_, _) => Tick();
         timer.Start();
@@ -81,9 +93,10 @@ public partial class MainWindow : Window
         if (now.Date != lastToday)
         {
             lastToday = now.Date;
-            UpdateDateTitle();
+            Refresh();
         }
         ClockText.Text = now.ToString("HH:mm:ss");
+        WeekView.Tick(now);
         Timeline.Now = now;
         Timeline.InvalidateVisual(); Overview.InvalidateVisual();
         CheckReminders(now);
@@ -166,7 +179,14 @@ public partial class MainWindow : Window
         Timeline.Items = CurrentItems;
         Timeline.SelectedDate = selectedDate;
         Timeline.Refresh(); Overview.InvalidateVisual();
-        CountText.Text = $"{CurrentItems.Count}项安排";
+        WeekView.Update(data, selectedDate, Timeline.ViewStart, Timeline.ViewSpan);
+        MonthView.Update(data, selectedDate);
+        UpdateViewPresentation();
+        Overview.DisplayItems = viewMode == PlannerView.Week
+            ? Enumerable.Range(0, 7).SelectMany(offset => PlanningDates.Items(data, PlanningDates.WeekStart(selectedDate).AddDays(offset))).ToList()
+            : null;
+        Overview.InvalidateVisual();
+        RefreshDetails();
         UndoButton.IsEnabled = History.CanUndo;
         RedoButton.IsEnabled = History.CanRedo;
         UpdateDateTitle();
@@ -174,15 +194,78 @@ public partial class MainWindow : Window
     private void UpdateDateTitle()
     {
         var culture = CultureInfo.GetCultureInfo("zh-CN");
-        DateTitle.Text = selectedDate.ToString("yyyy年M月d日", culture);
+        var weekStart = PlanningDates.WeekStart(selectedDate);
+        DateTitle.Text = viewMode == PlannerView.Week ? $"{weekStart:yyyy年M月d日}—{weekStart.AddDays(6):M月d日}"
+            : selectedDate.ToString(viewMode == PlannerView.Month ? "yyyy年M月" : "yyyy年M月d日", culture);
         DateSubtitle.Text = selectedDate.ToString("dddd", culture) + (selectedDate == DateTime.Today ? " · 今天" : "");
     }
     private void SelectDate(DateTime date)
     {
-        selectedDate = date.Date;
+        selectedDate = date.Date < new DateTime(2, 1, 1) ? new DateTime(2, 1, 1)
+            : date.Date > new DateTime(9998, 12, 31) ? new DateTime(9998, 12, 31) : date.Date;
         Timeline.ClearSelection();
         TimelineScroll.ScrollToTop();
         Refresh();
+    }
+    private void ViewMode_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button button && Enum.TryParse(button.Tag?.ToString(), out PlannerView mode))
+        { viewMode = mode; CalendarPopup.IsOpen = false; Timeline.ClearSelection(); Refresh(); }
+    }
+    private void OpenDay(DateTime date) { viewMode = PlannerView.Day; SelectDate(date); }
+    private void OpenDay_Click(object sender, RoutedEventArgs e) => OpenDay(selectedDate);
+    private void PreviousPeriod_Click(object sender, RoutedEventArgs e) => NavigatePeriod(-1);
+    private void NextPeriod_Click(object sender, RoutedEventArgs e) => NavigatePeriod(1);
+    private void CurrentPeriod_Click(object sender, RoutedEventArgs e) => SelectDate(DateTime.Today);
+    private void NavigatePeriod(int direction)
+    {
+        try { SelectDate(viewMode == PlannerView.Month ? selectedDate.AddMonths(direction) : selectedDate.AddDays(direction * (viewMode == PlannerView.Week ? 7 : 1))); }
+        catch (ArgumentOutOfRangeException) { }
+    }
+    private void UpdateViewPresentation()
+    {
+        TimelineScroll.Visibility = viewMode == PlannerView.Day ? Visibility.Visible : Visibility.Collapsed;
+        WeekView.Visibility = viewMode == PlannerView.Week ? Visibility.Visible : Visibility.Collapsed;
+        MonthScroll.Visibility = viewMode == PlannerView.Month ? Visibility.Visible : Visibility.Collapsed;
+        DetailsPanel.Visibility = viewMode == PlannerView.Day ? Visibility.Collapsed : Visibility.Visible;
+        DetailsColumn.Width = new GridLength(viewMode == PlannerView.Day ? 0 : 284);
+        OverviewPanel.Visibility = viewMode == PlannerView.Month ? Visibility.Collapsed : Visibility.Visible;
+        OverviewRow.Height = new GridLength(viewMode == PlannerView.Month ? 0 : 90);
+        foreach (var button in new[] { DayViewButton, WeekViewButton, MonthViewButton })
+        {
+            var active = button.Tag.ToString() == viewMode.ToString();
+            button.Background = active ? TimelineControl.BrushOf("#008D94") : Brushes.White;
+            button.Foreground = active ? Brushes.White : TimelineControl.BrushOf("#34465D");
+        }
+        CurrentPeriodButton.Content = viewMode == PlannerView.Day ? "今天" : viewMode == PlannerView.Week ? "本周" : "本月";
+        var start = viewMode == PlannerView.Week ? PlanningDates.WeekStart(selectedDate) : PlanningDates.MonthStart(selectedDate);
+        var count = viewMode == PlannerView.Day ? CurrentItems.Count : Enumerable.Range(0, viewMode == PlannerView.Week ? 7 : DateTime.DaysInMonth(selectedDate.Year, selectedDate.Month))
+            .Sum(offset => PlanningDates.Items(data, start.AddDays(offset)).Count);
+        CountText.Text = (viewMode == PlannerView.Day ? "" : viewMode == PlannerView.Week ? "本周 · " : "本月 · ") + $"{count}项安排";
+        InteractionHint.Text = viewMode == PlannerView.Month ? "单击日期查看安排 · 双击日期打开日视图 · 点击安排编辑"
+            : "单击创建事件 · 拖动创建日程 · 双击日程块编辑 · 右键更多操作 · Ctrl+滚轮缩放 · Shift+滚轮平移";
+    }
+    private void RefreshDetails()
+    {
+        DetailsTitle.Text = selectedDate.ToString("M月d日 ddd", CultureInfo.GetCultureInfo("zh-CN"));
+        DetailsCount.Text = $"{CurrentItems.Count}项安排" + (selectedDate == DateTime.Today ? " · 今天" : "");
+        DetailsItems.Children.Clear();
+        if (CurrentItems.Count == 0)
+            DetailsItems.Children.Add(new TextBlock { Text = "当天暂无安排", Foreground = TimelineControl.BrushOf("#8491A2"), Margin = new Thickness(0, 12, 0, 0) });
+        foreach (var item in CurrentItems.OrderBy(item => item.Start).ThenBy(item => item.Id))
+        {
+            var content = new StackPanel { Width = 193 };
+            content.Children.Add(new TextBlock { Text = item.Title, FontSize = 15, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap });
+            content.Children.Add(new TextBlock { Text = item.TimeLabel, FontSize = 11, Foreground = TimelineControl.BrushOf("#738297"), Margin = new Thickness(0, 8, 0, 0), TextWrapping = TextWrapping.Wrap });
+            if (item.ReminderEnabled) content.Children.Add(new TextBlock { Text = $"提前{item.ReminderMinutes}分钟提醒", FontSize = 11, Foreground = TimelineControl.BrushOf("#738297"), Margin = new Thickness(0, 5, 0, 0) });
+            var button = new Button { Content = content, Padding = new Thickness(10, 12, 6, 12), Background = Brushes.White };
+            button.Click += (_, _) => Edit(item, false);
+            var menu = new ContextMenu();
+            var edit = new MenuItem { Header = "编辑日程" }; edit.Click += (_, _) => Edit(item, false);
+            var delete = new MenuItem { Header = "删除日程" }; delete.Click += (_, _) => Delete(item);
+            menu.Items.Add(edit); menu.Items.Add(delete); button.ContextMenu = menu;
+            DetailsItems.Children.Add(new Border { BorderBrush = TimelineControl.BrushOf(item.Color), BorderThickness = new Thickness(4, 0, 0, 0), Child = button, Margin = new Thickness(0, 0, 0, 10) });
+        }
     }
     private void Calendar_Click(object sender, RoutedEventArgs e)
     {
@@ -240,6 +323,7 @@ public partial class MainWindow : Window
     private void UpdateGrid()
     {
         Timeline.GridMinutes = data.GridMinutes;
+        WeekView.Update(data, selectedDate, Timeline.ViewStart, Timeline.ViewSpan);
         Timeline.Refresh();
     }
     private void Settings_Click(object sender, RoutedEventArgs e)
@@ -254,6 +338,7 @@ public partial class MainWindow : Window
         UpdateGrid();
         if (rangeChanged) Timeline.SetView(data.DefaultViewStart, data.DefaultViewEnd - data.DefaultViewStart);
         SetCloseToTray(settings.CloseToTray);
+        Refresh();
     }
     private void New_Click(object sender, RoutedEventArgs e) => Create(Math.Min(1440 - data.GridMinutes, TimeMath.Snap(DateTime.Now.TimeOfDay.TotalMinutes, data.GridMinutes)), null);
     private void Undo_Click(object sender, RoutedEventArgs e) { if (History.CanUndo) { CurrentItems = History.Undo(CurrentItems); Refresh(); Save(); } }

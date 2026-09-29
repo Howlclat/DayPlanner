@@ -9,6 +9,9 @@ namespace DayPlanner;
 public sealed class TimelineControl : FrameworkElement
 {
     public List<ScheduleItem> Items { get; set; } = [];
+    public bool Compact { get; set; }
+    public bool Highlight { get; set; }
+    public bool Weekend { get; set; }
     public int GridMinutes { get; set; } = 10;
     public double ViewStart { get; private set; } = 360;
     public double ViewSpan { get; private set; } = 960;
@@ -66,24 +69,25 @@ public sealed class TimelineControl : FrameworkElement
             double left = Math.Max(36, Map(item.Start)), right = Math.Min(width - 36, Map(item.End ?? item.Start));
             var cardWidth = Math.Min(152, plot);
             var cardLeft = Numeric.Clamp(left - cardWidth / 2, 36, Math.Max(36, width - 36 - cardWidth));
-            var extentLeft = item.IsPoint ? Math.Min(cardLeft, left - 8) : left;
-            var extentRight = item.IsPoint ? Math.Max(cardLeft + cardWidth, left + 8) : left + Math.Max(6, right - left);
-            var top = 92.0;
+            var extentLeft = item.IsPoint && !Compact ? Math.Min(cardLeft, left - 8) : left;
+            var extentRight = item.IsPoint && !Compact ? Math.Max(cardLeft + cardWidth, left + 8) : left + (item.IsPoint ? Math.Min(144, Math.Max(6, width - 36 - left)) : Math.Max(6, right - left));
+            var connectedPoint = item.IsPoint && !Compact;
+            var top = Compact ? 10.0 : 92.0;
             Rect extent;
             while (true)
             {
-                extent = new Rect(extentLeft - 4, top - 4, extentRight - extentLeft + 8, item.IsPoint ? 134 : 72);
+                extent = new Rect(extentLeft - 4, top - 4, extentRight - extentLeft + 8, connectedPoint ? 134 : Compact ? 52 : 72);
                 if (!occupied.Any(r => r.IntersectsWith(extent))) break;
-                top += 80;
+                top += Compact ? 60 : 80;
             }
             occupied.Add(extent);
-            var bar = item.IsPoint ? new Rect(left - 8, 92, 16, 18)
-                : new Rect(left, top, Math.Max(6, right - left), 64);
-            var card = item.IsPoint ? new Rect(cardLeft, top + 48, cardWidth, 78) : Rect.Empty;
+            var bar = connectedPoint ? new Rect(left - 8, 92, 16, 18)
+                : new Rect(left, top, extentRight - left, Compact ? 44 : 64);
+            var card = connectedPoint ? new Rect(cardLeft, top + 48, cardWidth, 78) : Rect.Empty;
             layout.Add(new(item, bar, left, card));
             bottom = Math.Max(bottom, extent.Bottom);
         }
-        return Math.Max(400, bottom + 48);
+        return Compact ? Math.Max(64, bottom + 10) : Math.Max(400, bottom + 48);
     }
 
     protected override Size MeasureOverride(Size availableSize)
@@ -94,10 +98,11 @@ public sealed class TimelineControl : FrameworkElement
     protected override void OnRender(DrawingContext dc)
     {
         base.OnRender(dc);
-        dc.DrawRectangle(Brushes.White, null, new Rect(RenderSize));
+        dc.DrawRectangle(Compact ? BrushOf(Highlight ? "#EDF8F8" : Weekend ? "#F7F9FB" : "#FFFFFF") : Brushes.White, null, new Rect(RenderSize));
         BuildLayout(ActualWidth);
         var pastX = ShowsToday ? Numeric.Clamp(X(Now.TimeOfDay.TotalMinutes), 36, ActualWidth - 36) : 36;
-        dc.DrawRectangle(BrushOf("#FAFBFD"), null, new Rect(36, 64, Math.Max(0, pastX - 36), Math.Max(0, ActualHeight - 76)));
+        if (!Compact) dc.DrawRectangle(BrushOf("#FAFBFD"), null, new Rect(36, 64, Math.Max(0, pastX - 36), Math.Max(0, ActualHeight - 76)));
+        var axisTop = Compact ? 0 : 64;
         int first = (int)Math.Ceiling(ViewStart / GridMinutes) * GridMinutes;
         var pixelsPerGrid = PlotWidth / ViewSpan * GridMinutes;
         for (int t = first; t <= ViewStart + ViewSpan; t += GridMinutes)
@@ -106,21 +111,21 @@ public sealed class TimelineControl : FrameworkElement
             bool hour = t % 60 == 0;
             if (hour || pixelsPerGrid >= 6)
             {
-                dc.DrawLine(new Pen(BrushOf(hour ? "#E4EAF1" : "#F1F4F8"), 1), new Point(x, 64), new Point(x, ActualHeight - 12));
-                dc.DrawLine(new Pen(BrushOf(hour ? "#8190A5" : "#BFCAD6"), 1), new Point(x, hour ? 47 : 55), new Point(x, 64));
+                dc.DrawLine(new Pen(BrushOf(hour ? "#E4EAF1" : "#F1F4F8"), 1), new Point(x, axisTop), new Point(x, ActualHeight - (Compact ? 0 : 12)));
+                if (!Compact) dc.DrawLine(new Pen(BrushOf(hour ? "#8190A5" : "#BFCAD6"), 1), new Point(x, hour ? 47 : 55), new Point(x, 64));
             }
-            if (hour && (ViewSpan <= 900 || t % 120 == 0)) Text(dc, TimeMath.Format(t), x - 19, 23, 12, Ink);
+            if (!Compact && hour && (ViewSpan <= 900 || t % 120 == 0)) Text(dc, TimeMath.Format(t), x - 19, 23, 12, Ink);
         }
-        dc.DrawLine(new Pen(BrushOf("#DDE5ED"), 1), new Point(22, 64), new Point(ActualWidth - 22, 64));
+        if (!Compact) dc.DrawLine(new Pen(BrushOf("#DDE5ED"), 1), new Point(22, 64), new Point(ActualWidth - 22, 64));
         var nowX = X(Now.TimeOfDay.TotalMinutes);
         if (ShowsToday && nowX >= 36 && nowX <= ActualWidth - 36)
         {
             var orange = BrushOf("#F17A45");
-            dc.DrawLine(new Pen(orange, 1.3) { DashStyle = DashStyles.Dash }, new Point(nowX, 64), new Point(nowX, ActualHeight - 12));
-            dc.DrawEllipse(orange, null, new Point(nowX, 64), 3.5, 3.5);
+            dc.DrawLine(new Pen(orange, 1.3) { DashStyle = DashStyles.Dash }, new Point(nowX, axisTop), new Point(nowX, ActualHeight - (Compact ? 0 : 12)));
+            if (!Compact) dc.DrawEllipse(orange, null, new Point(nowX, 64), 3.5, 3.5);
             var labelLeft = Numeric.Clamp(nowX - 39, 2, Math.Max(2, ActualWidth - 82));
-            dc.DrawRoundedRectangle(orange, null, new Rect(labelLeft, 1, 80, 20), 4, 4);
-            Text(dc, $"现在 {Now:HH:mm}", labelLeft + 9, 3, 10, Brushes.White);
+            if (!Compact) dc.DrawRoundedRectangle(orange, null, new Rect(labelLeft, 1, 80, 20), 4, 4);
+            if (!Compact) Text(dc, $"现在 {Now:HH:mm}", labelLeft + 9, 3, 10, Brushes.White);
         }
         if (hoverPosition is Point hover && IsMouseOver && drag != DragMode.Pan && hover.X >= 36 && hover.X <= ActualWidth - 36)
         {
@@ -132,10 +137,10 @@ public sealed class TimelineControl : FrameworkElement
             {
                 var guide = BrushOf("#52738F");
                 dc.DrawLine(new Pen(guide, 1.3) { DashStyle = new DashStyle([4, 3], 0) },
-                    new Point(hoverX, 64), new Point(hoverX, ActualHeight - 12));
+                    new Point(hoverX, axisTop), new Point(hoverX, ActualHeight - (Compact ? 0 : 12)));
                 var labelLeft = Numeric.Clamp(hoverX - 29, 3, Math.Max(3, ActualWidth - 61));
-                dc.DrawRoundedRectangle(guide, null, new Rect(labelLeft, 40, 58, 23), 4, 4);
-                Text(dc, TimeMath.Format(hoverMinute), labelLeft + 10, 43, 12, Brushes.White);
+                dc.DrawRoundedRectangle(guide, null, new Rect(labelLeft, Compact ? 0 : 40, 58, 23), 4, 4);
+                Text(dc, TimeMath.Format(hoverMinute), labelLeft + 10, Compact ? 3 : 43, 12, Brushes.White);
             }
         }
         foreach (var entry in layout)
@@ -145,7 +150,7 @@ public sealed class TimelineControl : FrameworkElement
             var selected = item.Id == SelectedId;
             var block = entry.Bar;
             var foreground = Brushes.White;
-            if (item.IsPoint)
+            if (item.IsPoint && !Compact)
             {
                 var card = entry.Card;
                 var connectionX = Numeric.Clamp(entry.Anchor, card.Left + 16, card.Right - 16);
@@ -169,18 +174,31 @@ public sealed class TimelineControl : FrameworkElement
                 Text(dc, "⋯", card.Right - 27, card.Y + 6, 19, Muted);
                 continue;
             }
+            if (item.IsPoint && Compact)
+            {
+                if (selected) dc.DrawRoundedRectangle(BrushOf("#EDF0F8"), new Pen(color, 1), block, 5, 5);
+                dc.DrawEllipse(color, new Pen(Brushes.White, 1), new Point(entry.Anchor + 5, block.Top + 21), 5, 5);
+                Text(dc, TimeMath.Format(item.Start) + " " + item.Title, block.Left + 16, block.Top + 12, 12, Ink,
+                    maxWidth: Math.Max(1, block.Width - 20), maxHeight: 22);
+                continue;
+            }
             dc.DrawRoundedRectangle(color, selected ? new Pen(Ink, 2) : null, block, 6, 6);
             dc.PushClip(new RectangleGeometry(block, 6, 6));
             var padding = block.Width < 60 ? 4 : 10;
             var textLeft = block.Left + padding;
             if (block.Width >= 22)
             {
-                Text(dc, item.Title, textLeft, block.Top + 10, 13, foreground, true,
-                    block.Right - padding - textLeft, block.Width < 90 ? 44 : 22);
+                if (block.Width < 90)
+                    Text(dc, item.Title, textLeft, block.Top + 4, 13, foreground, true,
+                        block.Right - padding - textLeft, block.Height - 8, centered: true);
+                else
+                    Text(dc, item.Title, textLeft, block.Top + (Compact ? 4 : 10), 13, foreground, true,
+                        block.Right - padding - textLeft, 22);
                 if (block.Width >= 90)
                 {
-                    var time = TimeMath.Format(item.Start) + "—" + TimeMath.Format(item.End!.Value);
-                    Text(dc, time, textLeft, block.Top + 38, 10.5, foreground,
+                    var time = item.IsPoint ? TimeMath.Format(item.Start) + " · 时间点"
+                        : TimeMath.Format(item.Start) + "—" + TimeMath.Format(item.End!.Value);
+                    Text(dc, time, textLeft, block.Top + (Compact ? 25 : 38), 10.5, foreground,
                         maxWidth: block.Right - padding - textLeft, maxHeight: 18);
                 }
             }
@@ -190,9 +208,9 @@ public sealed class TimelineControl : FrameworkElement
             {
                 var handlePen = new Pen(foreground, 2);
                 if (item.Start >= ViewStart)
-                    dc.DrawLine(handlePen, new Point(block.Left + 2, block.Top + 25), new Point(block.Left + 2, block.Bottom - 25));
+                    dc.DrawLine(handlePen, new Point(block.Left + 2, block.Top + (Compact ? 15 : 25)), new Point(block.Left + 2, block.Bottom - (Compact ? 15 : 25)));
                 if (item.End <= ViewStart + ViewSpan)
-                    dc.DrawLine(handlePen, new Point(block.Right - 2, block.Top + 25), new Point(block.Right - 2, block.Bottom - 25));
+                    dc.DrawLine(handlePen, new Point(block.Right - 2, block.Top + (Compact ? 15 : 25)), new Point(block.Right - 2, block.Bottom - (Compact ? 15 : 25)));
             }
         }
 
@@ -201,25 +219,27 @@ public sealed class TimelineControl : FrameworkElement
             var left = X(Math.Min(anchor, current));
             var right = X(Math.Max(anchor, current));
             var teal = BrushOf("#008D94");
-            dc.DrawRoundedRectangle(BrushOf("#26009DA4"), new Pen(teal, 1.5) { DashStyle = DashStyles.Dash }, new Rect(left, Math.Max(83, origin.Y - 20), Math.Max(2, right - left), 64), 5, 5);
+            var previewTop = Compact ? Numeric.Clamp(origin.Y - 20, 0, Math.Max(0, ActualHeight - 46)) : Math.Max(83, origin.Y - 20);
+            dc.DrawRoundedRectangle(BrushOf("#26009DA4"), new Pen(teal, 1.5) { DashStyle = DashStyles.Dash }, new Rect(left, previewTop, Math.Max(2, right - left), Compact ? 44 : 64), 5, 5);
             var label = $"{TimeMath.Format(Math.Min(anchor, current))}—{TimeMath.Format(Math.Max(anchor, current))} · {Math.Abs(current - anchor)}分钟";
             var labelX = Numeric.Clamp(left, 8, Math.Max(8, ActualWidth - 240));
-            dc.DrawRoundedRectangle(Brushes.White, new Pen(teal, 1), new Rect(labelX, Math.Max(83, origin.Y - 20) + 72, 222, 28), 5, 5);
-            Text(dc, label, labelX + 9, Math.Max(83, origin.Y - 20) + 78, 12, teal);
+            dc.DrawRoundedRectangle(Brushes.White, new Pen(teal, 1), new Rect(labelX, previewTop + (Compact ? 8 : 72), 222, 28), 5, 5);
+            Text(dc, label, labelX + 9, previewTop + (Compact ? 14 : 78), 12, teal);
         }
-        if (Items.Count == 0 && drag != DragMode.Create)
+        if (!Compact && Items.Count == 0 && drag != DragMode.Create)
         {
             Text(dc, "从一个时间点开始", ActualWidth / 2 - 90, 190, 20, Ink, true);
             Text(dc, "单击刻度记录一件事，或拖出一段专注时间", ActualWidth / 2 - 145, 228, 13, Muted);
         }
     }
     internal static SolidColorBrush BrushOf(string color) { var b = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color)); b.Freeze(); return b; }
-    internal static void Text(DrawingContext dc, string text, double x, double y, double size, Brush color, bool bold = false, double maxWidth = 1000, double maxHeight = 100)
+    internal static void Text(DrawingContext dc, string text, double x, double y, double size, Brush color, bool bold = false, double maxWidth = 1000, double maxHeight = 100, bool centered = false)
     {
         var ft = new FormattedText(text, CultureInfo.GetCultureInfo("zh-CN"), FlowDirection.LeftToRight,
             new Typeface(new FontFamily("Microsoft YaHei UI"), FontStyles.Normal, bold ? FontWeights.SemiBold : FontWeights.Normal, FontStretches.Normal), size, color, 1)
         { MaxTextWidth = Math.Max(1, maxWidth), MaxTextHeight = maxHeight, Trimming = TextTrimming.CharacterEllipsis };
-        dc.DrawText(ft, new Point(x, y));
+        if (centered) ft.TextAlignment = TextAlignment.Center;
+        dc.DrawText(ft, new Point(x, centered ? y + Math.Max(0, (maxHeight - ft.Height) / 2) : y));
     }
     private static double ResizeGrip(Rect block) => Math.Min(8, block.Width / 4);
     private LayoutItem? Hit(Point p) => layout.LastOrDefault(l => l.Bar.Contains(p) || l.Card.Contains(p));
@@ -357,6 +377,7 @@ public sealed class TimelineControl : FrameworkElement
 public sealed class OverviewControl : FrameworkElement
 {
     public TimelineControl? Timeline { get; set; }
+    public IReadOnlyList<ScheduleItem>? DisplayItems { get; set; }
     private int mode;
     private double origin;
     private double start;
@@ -372,7 +393,7 @@ public sealed class OverviewControl : FrameworkElement
         dc.DrawRoundedRectangle(TimelineControl.BrushOf("#EAF0F5"), new Pen(TimelineControl.BrushOf("#D5DFE8"), 1), rail, 5, 5);
         var left = X(t.ViewStart); var right = X(t.ViewStart + t.ViewSpan);
         dc.DrawRoundedRectangle(TimelineControl.BrushOf("#22008D94"), null, new Rect(left, 19, right - left, 24), 4, 4);
-        foreach (var item in t.Items)
+        foreach (var item in DisplayItems ?? t.Items)
         {
             var brush = TimelineControl.BrushOf(item.Color);
             if (item.IsPoint) dc.DrawEllipse(brush, null, new Point(X(item.Start), 31), 3, 3);

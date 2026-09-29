@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -128,6 +128,51 @@ internal static class SelfTest
             Check(timeline.ViewStart == 840, "视区日末钳制");
             timeline.SetView(0, 1440);
             Check(timeline.ViewSpan == 1440, "全天范围");
+            Check(PlanningDates.WeekStart(new DateTime(2026, 10, 4)) == new DateTime(2026, 9, 28), "跨月周从周一开始");
+            Check(PlanningDates.MonthRows(new DateTime(2021, 2, 1)) == 4
+                && PlanningDates.MonthRows(new DateTime(2026, 9, 1)) == 5
+                && PlanningDates.MonthRows(new DateTime(2026, 8, 1)) == 6, "月历覆盖四行五行六行");
+            Check(PlanningDates.MonthRows(new DateTime(2024, 2, 1)) == 5, "闰年二月月历");
+            var readOnlyData = new PlannerData();
+            Check(PlanningDates.Items(readOnlyData, DateTime.Today).Count == 0 && readOnlyData.Days.Count == 0, "浏览空日期保持存储不变");
+            var selectedDay = DateTime.Today.AddDays(8);
+            ((Calendar)window.FindName("DateCalendar")).SelectedDate = selectedDay;
+            ((Button)window.FindName("WeekViewButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.UpdateLayout();
+            Check(((WeekPlannerView)window.FindName("WeekView")).IsVisible && !timeline.IsVisible, "切换周视图");
+            window.Dispatcher.BeginInvoke(DispatcherPriority.ApplicationIdle, new Action(() =>
+            {
+                var dialog = window.OwnedWindows.OfType<EventEditor>().Single();
+                ((TextBox)dialog.FindName("TitleInput")).Text = "周视图创建安排";
+                ((TextBox)dialog.FindName("StartInput")).Text = "09:00";
+                ((RadioButton)dialog.FindName("SpanOption")).IsChecked = true;
+                ((TextBox)dialog.FindName("EndInput")).Text = "11:00";
+                ((Button)dialog.FindName("SaveButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            }));
+            ((Button)window.FindName("NewScheduleButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(integrationStore.Load().ForDate(selectedDay).Single().Title == "周视图创建安排"
+                && integrationStore.Load().Items.Count == 7, "周视图新建落入所选日期并保留其他日期");
+            var weekTimelines = Descendants((WeekPlannerView)window.FindName("WeekView")).OfType<TimelineControl>().ToList();
+            Check(weekTimelines.Count == 7 && weekTimelines.Single(t => t.SelectedDate == selectedDay).Items.Count == 1, "七天时间轴同步新建内容");
+            weekTimelines[0].SetView(480, 720);
+            Check(timeline.ViewStart == 480 && weekTimelines.All(t => t.ViewStart == 480 && t.ViewSpan == 720), "周内缩放范围与日视图同步");
+            window.UpdateLayout(); Snapshot(window, Path.Combine(root, "week-preview.png"));
+            ((Button)window.FindName("MonthViewButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.UpdateLayout();
+            Check(((MonthPlannerView)window.FindName("MonthView")).IsVisible && ((StackPanel)window.FindName("DetailsItems")).Children.Count == 1, "月视图同步当天完整安排");
+            ((Button)window.FindName("UndoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(integrationStore.Load().ForDate(selectedDay).Count == 0 && integrationStore.Load().Items.Count == 7, "跨视图撤销仅影响所选日期");
+            ((Button)window.FindName("RedoButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Check(integrationStore.Load().ForDate(selectedDay).Count == 1, "月视图重做并落盘");
+            window.UpdateLayout(); Snapshot(window, Path.Combine(root, "month-preview.png"));
+            window.Width = 1120; window.Height = 620; window.UpdateLayout();
+            Snapshot(window, Path.Combine(root, "month-narrow-preview.png"));
+            ((Button)window.FindName("WeekViewButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.UpdateLayout(); Snapshot(window, Path.Combine(root, "week-narrow-preview.png"));
+            ((Button)window.FindName("DayViewButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            ((Calendar)window.FindName("DateCalendar")).SelectedDate = DateTime.Today;
+            window.Width = 1440; window.Height = 820; window.UpdateLayout();
+            Check(timeline.Items.Count == 7 && timeline.IsVisible, "返回日视图保留原有安排");
             timeline.Items = Enumerable.Range(0, 25).Select(i => new ScheduleItem { Title = "重叠日程" + i, Start = 600, End = 660 }).ToList();
             timeline.Refresh(); window.UpdateLayout();
             Check(timeline.DesiredSize.Height > 2000, "密集重叠日程纵向扩展");
@@ -151,6 +196,15 @@ internal static class SelfTest
             log.Add("FAIL " + ex);
             File.WriteAllLines(Path.Combine(root, "test-results.txt"), log);
             return 1;
+        }
+    }
+    private static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            yield return child;
+            foreach (var descendant in Descendants(child)) yield return descendant;
         }
     }
     private static void Snapshot(Window window, string path)
